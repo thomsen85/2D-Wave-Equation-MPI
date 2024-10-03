@@ -35,6 +35,8 @@ real_t *buffers[3] = {NULL, NULL, NULL};
 #define U_nxt(i, j) buffers[2][((i) + 1) * (N + 2) + (j) + 1]
 
 int world_rank, world_size;
+MPI_Comm cart_comm;
+int cart_rank;
 
 #define MPI_ROOT 0
 #define IS_MPI_ROOT (world_rank == MPI_ROOT)
@@ -193,6 +195,49 @@ int main(int argc, char **argv) {
   N = options->N;
   max_iteration = options->max_iteration;
   snapshot_freq = options->snapshot_frequency;
+
+  int m_processes;
+  int n_processes;
+  if (M == N) {
+    m_processes = n_processes = sqrt(world_size);
+  } else {
+    if (M > N) {
+      int mult = M / N;
+      if (world_size % (mult + 1) != 0) {
+        log_error("Number of processes must be divisible by %d", mult + 1);
+        exit(EXIT_FAILURE);
+      }
+      n_processes = world_size / (mult + 1);
+      m_processes = world_size / n_processes;
+    } else {
+      int mult = N / M;
+      if (world_size % (mult + 1) != 0) {
+        log_error("Number of processes must be divisible by %d", mult + 1);
+        exit(EXIT_FAILURE);
+      }
+      m_processes = world_size / (mult + 1);
+      n_processes = world_size / m_processes;
+    }
+  }
+
+  log_debug("M: %ld, N: %ld, m_processes: %d, n_processes: %d", M, N,
+            m_processes, n_processes);
+  MPI_Cart_create(MPI_COMM_WORLD, 2, (int[]){m_processes, n_processes},
+                  (int[]){0, 0}, 0, &cart_comm);
+
+  int cart_size;
+  MPI_Comm_size(cart_comm, &cart_size);
+  log_debug("Cart size: %d", cart_size);
+  MPI_Comm_rank(cart_comm, &cart_rank);
+
+  log_debug("Rank: %d, Cart rank: %d", world_rank, cart_rank);
+
+  int cart_coords[2];
+  MPI_Cart_coords(cart_comm, cart_rank, 2, cart_coords);
+
+  log_debug("Rank: %d, Cart rank: %d, Cart coords: (%d, %d)", world_rank,
+            cart_rank, cart_coords[0], cart_coords[1]);
+
   // END: T3
 
   // Set up the initial state of the domain
@@ -217,6 +262,7 @@ int main(int argc, char **argv) {
 
   // Clean up and shut down
   domain_finalize();
+  free(options);
 
   // TASK: T1d
   // Finalise MPI
