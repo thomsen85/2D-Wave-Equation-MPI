@@ -4,5 +4,6 @@ images/
 sequential
 parallel
 *.pdf
+*.log
 
 

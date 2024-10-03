@@ -83,8 +83,8 @@ void domain_initialize(void) {
   buffers[1] = malloc((local_m + 2) * (local_n + 2) * sizeof(real_t));
   buffers[2] = malloc((local_m + 2) * (local_n + 2) * sizeof(real_t));
 
-  for (int_t i = local_m_offset; i < local_m_offset + local_m_offset; i++) {
-    for (int_t j = local_n_offset; j < local_n_offset + local_m_offset; j++) {
+  for (int_t i = local_m_offset; i < local_m_offset + local_m; i++) {
+    for (int_t j = local_n_offset; j < local_n_offset + local_n; j++) {
       // Calculate delta (radial distance) adjusted for M x N grid
       real_t delta = sqrt(((i - M / 2.0) * (i - M / 2.0)) / (real_t)M +
                           ((j - N / 2.0) * (j - N / 2.0)) / (real_t)N);
@@ -154,9 +154,8 @@ void border_exchange(void) {
     MPI_Send(send_column, local_m, MPI_DOUBLE, left_rank, 0, cart_comm);
 
     free(send_column);
+    log_trace("Rank: %d: Sendt left border", world_rank);
   }
-
-  log_trace("Rank: %d: Sendt left border", world_rank);
 
   // Not Rightmost
   if (!IS_MPI_RIGHTMOST) {
@@ -183,8 +182,8 @@ void border_exchange(void) {
     // Send Right Column
     MPI_Send(send_column, local_m, MPI_DOUBLE, right_rank, 0, cart_comm);
     free(send_column);
+    log_trace("Rank: %d: Recv left border", world_rank);
   }
-  log_trace("Rank: %d: Recv left border", world_rank);
 
   // Recive left borders
   // Not Leftmost
@@ -199,18 +198,16 @@ void border_exchange(void) {
       U(i, -1) = recv_column[i];
     }
     free(recv_column);
+    log_trace("Rank: %d: Send right border", world_rank);
   }
-
-  log_trace("Rank: %d: Send right border", world_rank);
 
   // Send top borders
   // Not Topmost
   if (!IS_MPI_TOPMOST) {
     // Send Top Row
     MPI_Send(&U(0, 0), local_n, MPI_DOUBLE, top_rank, 0, cart_comm);
+    log_trace("Rank: %d: Sendt top border", world_rank);
   }
-
-  log_trace("Rank: %d: Sendt top border", world_rank);
 
   // Not Bottommost
   // Recive top borders, and insert into bottom borders
@@ -227,9 +224,9 @@ void border_exchange(void) {
     // Recive bottom borders
     MPI_Recv(&U(-1, 0), local_n, MPI_DOUBLE, top_rank, 0, cart_comm,
              MPI_STATUS_IGNORE);
+    log_trace("Rank: %d: Recv top border", world_rank);
   }
 
-  log_trace("Rank: %d: Recv top border", world_rank);
   // Send and receive data from the top and bottom
   // END: T6
 }
@@ -259,13 +256,6 @@ void boundary_condition(void) {
 // Save the present time step in a numbered file under 'data/'
 void domain_save(int_t step) {
   // BEGIN: T8
-  /* char filename[256]; */
-  /* sprintf(filename, "data/%.5ld.dat", step); */
-  /* FILE *out = fopen(filename, "wb"); */
-  /* for (int_t i = 0; i < M; i++) { */
-  /*   fwrite(&U(i, 0), sizeof(real_t), N, out); */
-  /* } */
-  /* fclose(out); */
   // Inspiration is taken from
   // https://stackoverflow.com/questions/33537451/writing-distributed-arrays-using-mpi-io-and-cartesian-topology
 
@@ -275,8 +265,7 @@ void domain_save(int_t step) {
   int arrsize[2] = {local_m + 2, local_n + 2};
   int gridsize[2] = {local_m, local_n};
 
-  log_debug("Rank %d: Creating derived datatype", world_rank);
-  log_debug("Rank %d: start: (%d, %d), arrsize: (%d, %d), gridsize: (%d, %d)",
+  log_trace("Rank %d: start: (%d, %d), arrsize: (%d, %d), gridsize: (%d, %d)",
             world_rank, start[0], start[1], arrsize[0], arrsize[1], gridsize[0],
             gridsize[1]);
   MPI_Type_create_subarray(2, arrsize, gridsize, start, MPI_ORDER_C, MPI_DOUBLE,
@@ -290,8 +279,7 @@ void domain_save(int_t step) {
   int arrsizeV[2] = {M, N};
   int gridsizeV[2] = {local_m, local_n};
 
-  log_debug("Rank %d: Creating derived datatype 2", world_rank);
-  log_debug(
+  log_trace(
       "Rank %d: startV: (%d, %d), arrsizeV: (%d, %d), gridsizeV: (%d, %d)",
       world_rank, startV[0], startV[1], arrsizeV[0], arrsizeV[1], gridsizeV[0],
       gridsizeV[1]);
@@ -347,7 +335,16 @@ int main(int argc, char **argv) {
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
   // END: T1c
-  //
+
+  // TODO: Remove this
+  char log_file[256];
+  sprintf(log_file, "log_rank_%d.log", world_rank);
+  FILE *log_fp = fopen(log_file, "w");
+  if (!log_fp) {
+    fprintf(stderr, "Failed to open log file\n");
+    exit(EXIT_FAILURE);
+  }
+  log_add_fp(log_fp, LOG_TRACE);
 
   // TASK: T3
   // Distribute the user arguments to all the processes
@@ -379,59 +376,34 @@ int main(int argc, char **argv) {
   MPI_Dims_create(world_size, 2, dims);
   m_processes = dims[0];
   n_processes = dims[1];
-  /* if (M == N) { */
-  /*   m_processes = n_processes = sqrt(world_size); */
-  /* } else { */
-  /*   if (M > N) { */
-  /*     int mult = M / N; */
-  /*     if (world_size % (mult + 1) != 0) { */
-  /*       log_error("Number of processes must be divisible by %d", mult + 1);
-   */
-  /*       exit(EXIT_FAILURE); */
-  /*     } */
-  /*     n_processes = world_size / (mult + 1); */
-  /*     m_processes = world_size / n_processes; */
-  /*   } else { */
-  /*     int mult = N / M; */
-  /*     if (world_size % (mult + 1) != 0) { */
-  /*       log_error("Number of processes must be divisible by %d", mult + 1);
-   */
-  /*       exit(EXIT_FAILURE); */
-  /*     } */
-  /*     m_processes = world_size / (mult + 1); */
-  /*     n_processes = world_size / m_processes; */
-  /*   } */
-  /*   log_debug("M: %ld, N: %ld, m_processes: %d, n_processes: %d", M, N, */
-  /*             m_processes, n_processes); */
-  /* } */
 
   local_m = M / m_processes;
   local_n = N / n_processes;
 
-  log_debug("Rank: %d: Local M: %d, Local N: %d", world_rank, local_m, local_n);
+  log_debug("Rank: %d: Local_m: %d, Local_n: %d", world_rank, local_m, local_n);
 
   MPI_Cart_create(MPI_COMM_WORLD, 2, (int[]){m_processes, n_processes},
                   (int[]){0, 0}, 0, &cart_comm);
 
   int cart_size;
   MPI_Comm_size(cart_comm, &cart_size);
-
   MPI_Comm_rank(cart_comm, &cart_rank);
-
-  log_debug("Rank %d: Cart rank: %d", world_rank, cart_rank);
 
   MPI_Cart_coords(cart_comm, cart_rank, 2, local_cart_coords);
 
-  log_debug("Rank %d: Cart rank: %d, Cart coords: (%d, %d)", world_rank,
-            cart_rank, local_cart_coords[0], local_cart_coords[1]);
+  log_debug("Rank %d: Cart rank: %d, Cart coords: (%d, %d), Cart size",
+            world_rank, cart_rank, local_cart_coords[0], local_cart_coords[1],
+            cart_size);
 
   local_m_offset = local_cart_coords[0] * (local_m + 2);
   local_n_offset = local_cart_coords[1] * (local_n + 2);
+  log_debug("Rank %d: Local_m_offset: %d, Local_n_offset: %d", world_rank,
+            local_m_offset, local_n_offset);
 
   // END: T3
 
   // Set up the initial state of the domain
-  log_trace("Rank %d: Domain initialize", world_rank);
+  log_trace("Rank %d: Domain initializing", world_rank);
   domain_initialize();
 
   struct timeval t_start, t_end;
@@ -460,6 +432,9 @@ int main(int argc, char **argv) {
   // BEGIN: T1d
   MPI_Finalize();
   // END: T1d
+
+  // TODO: Remove this
+  fclose(log_fp);
 
   exit(EXIT_SUCCESS);
 }
