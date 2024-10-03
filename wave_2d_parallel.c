@@ -50,6 +50,11 @@ int cart_rank;
 #define IS_MPI_ROOT (world_rank == MPI_ROOT)
 #define IS_MPI_LAST (world_rank == world_size - 1)
 
+#define IS_MPI_LEFTMOST (local_cart_coords[1] == 0)
+#define IS_MPI_RIGHTMOST (local_cart_coords[1] == n_processes - 1)
+#define IS_MPI_TOPMOST (local_cart_coords[0] == 0)
+#define IS_MPI_BOTTOMMOST (local_cart_coords[0] == m_processes - 1)
+
 // END: T1b
 
 // Simulation parameters: size, step count, and how often to save the state
@@ -136,7 +141,7 @@ void border_exchange(void) {
   // REMEMBER cord[0] == m == rows
   // REMEMBER cord[1] == n == cols
   // Not Leftmost
-  if (local_cart_coords[1] != 0) {
+  if (!IS_MPI_LEFTMOST) {
 
     // Sending and receve could probalby be done on the same memory allocation
     real_t *send_column = malloc(local_m * sizeof(real_t));
@@ -155,7 +160,7 @@ void border_exchange(void) {
   log_trace("Rank: %d: Sendt left border", world_rank);
 
   // Not Rightmost
-  if (local_cart_coords[1] != n_processes - 1) {
+  if (!IS_MPI_RIGHTMOST) {
     // Recive right borders
     real_t *recv_column = malloc(local_m * sizeof(real_t));
 
@@ -184,7 +189,7 @@ void border_exchange(void) {
 
   // Recive left borders
   // Not Leftmost
-  if (local_cart_coords[1] != 0) {
+  if (!IS_MPI_LEFTMOST) {
     real_t *recv_column = malloc(local_m * sizeof(real_t));
 
     MPI_Recv(recv_column, local_m, MPI_DOUBLE, left_rank, 0, cart_comm,
@@ -201,21 +206,28 @@ void border_exchange(void) {
 
   // Send top borders
   // Not Topmost
-  if (local_cart_coords[0] != 0) {
+  if (!IS_MPI_TOPMOST) {
     // Send Top Row
-    MPI_Send(U(0, 0), local_n, MPI_DOUBLE, top_rank, 0, cart_comm);
+    MPI_Send(&U(0, 0), local_n, MPI_DOUBLE, top_rank, 0, cart_comm);
   }
 
   log_trace("Rank: %d: Sendt top border", world_rank);
 
   // Not Bottommost
   // Recive top borders, and insert into bottom borders
-  if (local_cart_coords[0] != m_processes - 1) {
-    MPI_Recv(U(local_m, 0), local_n, MPI_DOUBLE, bottom_rank, 0, cart_comm,
+  if (!IS_MPI_BOTTOMMOST) {
+    MPI_Recv(&U(local_m, 0), local_n, MPI_DOUBLE, bottom_rank, 0, cart_comm,
              MPI_STATUS_IGNORE);
 
     // Send Bottom Row
-    MPI_Send(U(local_m - 1, 0), local_n, MPI_DOUBLE, bottom_rank, 0, cart_comm);
+    MPI_Send(&U(local_m - 1, 0), local_n, MPI_DOUBLE, bottom_rank, 0,
+             cart_comm);
+  }
+
+  if (!IS_MPI_TOPMOST) {
+    // Recive bottom borders
+    MPI_Recv(&U(-1, 0), local_n, MPI_DOUBLE, top_rank, 0, cart_comm,
+             MPI_STATUS_IGNORE);
   }
 
   log_trace("Rank: %d: Recv top border", world_rank);
