@@ -46,8 +46,8 @@ int n_processes;
 MPI_Comm cart_comm;
 int cart_rank;
 
-#define MPI_ROOT 0
-#define IS_MPI_ROOT (world_rank == MPI_ROOT)
+#define MPI_ROOT_RANK 0
+#define IS_MPI_ROOT_RANK (world_rank == MPI_ROOT_RANK)
 #define IS_MPI_LAST (world_rank == world_size - 1)
 
 #define IS_MPI_LEFTMOST (local_cart_coords[1] == 0)
@@ -131,9 +131,10 @@ void border_exchange(void) {
   int top_rank;
   int right_rank;
   int bottom_rank;
+
   // TODO: Ensure that the ranks are correct
-  MPI_Cart_shift(cart_comm, 0, 1, &_rank_source, &top_rank);
-  MPI_Cart_shift(cart_comm, 0, -1, &_rank_source, &bottom_rank);
+  MPI_Cart_shift(cart_comm, 0, -1, &_rank_source, &top_rank);
+  MPI_Cart_shift(cart_comm, 0, 1, &_rank_source, &bottom_rank);
   MPI_Cart_shift(cart_comm, 1, 1, &_rank_source, &right_rank);
   MPI_Cart_shift(cart_comm, 1, -1, &_rank_source, &left_rank);
 
@@ -169,7 +170,7 @@ void border_exchange(void) {
 
     // Insert into right side of U
     for (int_t i = 0; i < local_m; i++) {
-      U(i, local_n - 1) = recv_column[i];
+      U(i, local_n) = recv_column[i];
     }
     free(recv_column);
     // Send right borders
@@ -276,6 +277,10 @@ void domain_save(int_t step) {
   int arrsize[2] = {local_m + 2, local_n + 2};
   int gridsize[2] = {local_m, local_n};
 
+  log_info("Rank %d: Creating derived datatype", world_rank);
+  log_info("Rank %d: start: (%d, %d), arrsize: (%d, %d), gridsize: (%d, %d)",
+           world_rank, start[0], start[1], arrsize[0], arrsize[1], gridsize[0],
+           gridsize[1]);
   MPI_Type_create_subarray(2, arrsize, gridsize, start, MPI_ORDER_C, MPI_DOUBLE,
                            &grid);
   MPI_Type_commit(&grid);
@@ -287,12 +292,17 @@ void domain_save(int_t step) {
   /* int arrsizeV[2] = {dim[0] * nnx, dim[1] * nny}; */
   /* int gridsizeV[2] = {nnx, nny}; */
 
-  int startV[2] = {local_m_offset, local_n_offset};
+  int startV[2] = {local_m * local_cart_coords[0],
+                   local_n * local_cart_coords[1]};
   int arrsizeV[2] = {M, N};
   int gridsizeV[2] = {local_m, local_n};
 
+  log_info("Rank %d: Creating derived datatype 2", world_rank);
+  log_info("Rank %d: startV: (%d, %d), arrsizeV: (%d, %d), gridsizeV: (%d, %d)",
+           world_rank, startV[0], startV[1], arrsizeV[0], arrsizeV[1],
+           gridsizeV[0], gridsizeV[1]);
   MPI_Type_create_subarray(2, arrsizeV, gridsizeV, startV, MPI_ORDER_C,
-                           MPI_FLOAT, &view);
+                           MPI_DOUBLE, &view);
   MPI_Type_commit(&view);
 
   /* MPI IO */
@@ -304,7 +314,7 @@ void domain_save(int_t step) {
   MPI_File_open(cart_comm, filename, MPI_MODE_CREATE | MPI_MODE_WRONLY,
                 MPI_INFO_NULL, &fh);
 
-  MPI_File_set_view(fh, 0, MPI_FLOAT, view, "native", MPI_INFO_NULL);
+  MPI_File_set_view(fh, 0, MPI_DOUBLE, view, "native", MPI_INFO_NULL);
   MPI_File_write_all(fh, &U(0, 0), 1, grid, MPI_STATUS_IGNORE);
   MPI_File_close(&fh);
 
@@ -334,7 +344,7 @@ void simulate(void) {
 
 int main(int argc, char **argv) {
   // TODO: remove this
-  log_set_level(LOG_INFO);
+  log_set_level(LOG_TRACE);
   // TASK: T1c
   // Initialise MPI
   // BEGIN: T1c
@@ -348,7 +358,7 @@ int main(int argc, char **argv) {
   // Distribute the user arguments to all the processes
   // BEGIN: T3
   OPTIONS *options;
-  if (IS_MPI_ROOT) {
+  if (IS_MPI_ROOT_RANK) {
     options = parse_args(argc, argv);
     if (!options) {
       fprintf(stderr, "Argument parsing failed\n");
@@ -358,7 +368,7 @@ int main(int argc, char **argv) {
     options = malloc(sizeof(OPTIONS));
   }
 
-  MPI_Bcast(options, sizeof(OPTIONS), MPI_BYTE, MPI_ROOT, MPI_COMM_WORLD);
+  MPI_Bcast(options, sizeof(OPTIONS), MPI_BYTE, MPI_ROOT_RANK, MPI_COMM_WORLD);
   log_debug(
       "Rank %d: M: %ld, N: %ld, max_iteration: %ld, snapshot_frequency: %ld",
       world_rank, options->M, options->N, options->max_iteration,
@@ -427,12 +437,12 @@ int main(int argc, char **argv) {
   // TASK: T2
   // Time your code
   // BEGIN: T2
-  if (IS_MPI_ROOT)
+  if (IS_MPI_ROOT_RANK)
     gettimeofday(&t_start, NULL);
 
   simulate();
 
-  if (IS_MPI_ROOT) {
+  if (IS_MPI_ROOT_RANK) {
     gettimeofday(&t_end, NULL);
     printf("Total elapsed time: %lf seconds\n",
            WALLTIME(t_end) - WALLTIME(t_start));
