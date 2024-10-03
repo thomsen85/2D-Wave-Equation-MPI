@@ -154,7 +154,7 @@ void border_exchange(void) {
     MPI_Send(send_column, local_m, MPI_DOUBLE, left_rank, 0, cart_comm);
 
     free(send_column);
-    log_trace("Rank: %d: Sendt left border", world_rank);
+    log_trace("Rank: %d: Send left border", world_rank);
   }
 
   // Not Rightmost
@@ -164,25 +164,32 @@ void border_exchange(void) {
 
     MPI_Recv(recv_column, local_m, MPI_DOUBLE, right_rank, 0, cart_comm,
              MPI_STATUS_IGNORE);
+    log_trace("Rank: %d: Recv left border insert into right border",
+              world_rank);
 
     // Insert into right side of U
+    log_trace("Rank: %d: Insert into right border", world_rank);
     for (int_t i = 0; i < local_m; i++) {
       U(i, local_n) = recv_column[i];
     }
+
+    log_trace("Rank: %d: Inserted into right border", world_rank);
     free(recv_column);
     // Send right borders
 
     real_t *send_column = malloc(local_m * sizeof(real_t));
 
+    log_trace("Rank: %d: Send right border", world_rank);
     // Filling the column with right
     for (int_t i = 0; i < local_m; i++) {
       send_column[i] = U(i, local_n - 1);
     }
+    log_trace("Rank: %d: Filled right border", world_rank);
 
     // Send Right Column
     MPI_Send(send_column, local_m, MPI_DOUBLE, right_rank, 0, cart_comm);
     free(send_column);
-    log_trace("Rank: %d: Recv left border", world_rank);
+    log_trace("Rank: %d: Send Right Border", world_rank);
   }
 
   // Recive left borders
@@ -198,7 +205,8 @@ void border_exchange(void) {
       U(i, -1) = recv_column[i];
     }
     free(recv_column);
-    log_trace("Rank: %d: Send right border", world_rank);
+    log_trace("Rank: %d: Recieve Right border, insert into left border",
+              world_rank);
   }
 
   // Send top borders
@@ -311,6 +319,7 @@ void domain_save(int_t step) {
 void simulate(void) {
   // Go through each time step
   for (int_t iteration = 0; iteration <= max_iteration; iteration++) {
+    log_trace("Rank %d: Iteration: %ld", world_rank, iteration);
     if ((iteration % snapshot_freq) == 0) {
       domain_save(iteration / snapshot_freq);
     }
@@ -374,8 +383,8 @@ int main(int argc, char **argv) {
 
   int dims[2] = {0, 0};
   MPI_Dims_create(world_size, 2, dims);
-  m_processes = dims[0];
-  n_processes = dims[1];
+  m_processes = dims[1];
+  n_processes = dims[0];
 
   local_m = M / m_processes;
   local_n = N / n_processes;
@@ -395,8 +404,8 @@ int main(int argc, char **argv) {
             world_rank, cart_rank, local_cart_coords[0], local_cart_coords[1],
             cart_size);
 
-  local_m_offset = local_cart_coords[0] * (local_m + 2);
-  local_n_offset = local_cart_coords[1] * (local_n + 2);
+  local_m_offset = local_cart_coords[0] * local_m;
+  local_n_offset = local_cart_coords[1] * local_n;
   log_debug("Rank %d: Local_m_offset: %d, Local_n_offset: %d", world_rank,
             local_m_offset, local_n_offset);
 
