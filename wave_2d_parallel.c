@@ -348,7 +348,7 @@ void simulate(void) {
 
 int main(int argc, char **argv) {
   // TODO: remove this
-  log_set_level(LOG_TRACE);
+  log_set_level(LOG_ERROR);
   // TASK: T1c
   // Initialise MPI
   // BEGIN: T1c
