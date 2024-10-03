@@ -122,7 +122,80 @@ void time_step(void) {
 // Communicate the border between processes.
 void border_exchange(void) {
   // BEGIN: T6
-  ;
+  int _rank_source;
+  int left_rank;
+  int top_rank;
+  int right_rank;
+  int bottom_rank;
+  // TODO: Ensure that the ranks are correct
+  MPI_Cart_shift(cart_comm, 0, 1, &_rank_source, &top_rank);
+  MPI_Cart_shift(cart_comm, 0, -1, &_rank_source, &bottom_rank);
+  MPI_Cart_shift(cart_comm, 1, 1, &_rank_source, &right_rank);
+  MPI_Cart_shift(cart_comm, 1, -1, &_rank_source, &left_rank);
+
+  // Send left borders
+  // REMEMBER cord[0] == m == rows
+  // REMEMBER cord[1] == n == cols
+  // Not Leftmost
+  if (local_cart_coords[1] != 0) {
+
+    // Sending and receve could probalby be done on the same memory allocation
+    real_t *send_column = malloc(local_m * sizeof(real_t));
+
+    // Filling the column with left
+    for (int_t i = 0; i < local_m; i++) {
+      send_column[i] = U(i, 0);
+    }
+
+    // Send Left Column
+    MPI_Send(&send_column, local_m, MPI_DOUBLE, left_rank, 0, cart_comm);
+
+    free(send_column);
+  }
+
+  // Not Rightmost
+  if (local_cart_coords[1] != n_processes - 1) {
+    // Recive right borders
+    real_t *recv_column = malloc(local_m * sizeof(real_t));
+
+    MPI_Recv(&recv_column, local_m, MPI_DOUBLE, right_rank, 0, cart_comm,
+             MPI_STATUS_IGNORE);
+
+    // Insert into right side of U
+    for (int_t i = 0; i < local_m; i++) {
+      U(i, local_n - 1) = recv_column[i];
+    }
+    free(recv_column);
+    // Send right borders
+
+    real_t *send_column = malloc(local_m * sizeof(real_t));
+
+    // Filling the column with right
+    for (int_t i = 0; i < local_m; i++) {
+      send_column[i] = U(i, local_n - 1);
+    }
+
+    // Send Right Column
+    MPI_Send(&send_column, local_m, MPI_DOUBLE, right_rank, 0, cart_comm);
+    free(send_column);
+  }
+
+  // Recive left borders
+  // Not Leftmost
+  if (local_cart_coords[1] != 0) {
+    real_t *recv_column = malloc(local_m * sizeof(real_t));
+
+    MPI_Recv(&recv_column, local_m, MPI_DOUBLE, left_rank, 0, cart_comm,
+             MPI_STATUS_IGNORE);
+
+    // Insert into left side of U
+    for (int_t i = 0; i < local_m; i++) {
+      U(i, 0) = recv_column[i];
+    }
+    free(recv_column);
+  }
+
+  // Send and receive data from the top and bottom
   // END: T6
 }
 
