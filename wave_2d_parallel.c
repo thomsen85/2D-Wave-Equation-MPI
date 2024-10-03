@@ -35,6 +35,8 @@ real_t *buffers[3] = {NULL, NULL, NULL};
 #define U_nxt(i, j) buffers[2][((i) + 1) * (N + 2) + (j) + 1]
 
 int world_rank, world_size;
+int local_m, local_n, local_m_offset, local_n_offset;
+
 MPI_Comm cart_comm;
 int cart_rank;
 
@@ -66,16 +68,19 @@ void move_buffer_window(void) {
 // and set the time step.
 void domain_initialize(void) {
   // BEGIN: T4
-  buffers[0] = malloc((M + 2) * (N + 2) * sizeof(real_t));
-  buffers[1] = malloc((M + 2) * (N + 2) * sizeof(real_t));
-  buffers[2] = malloc((M + 2) * (N + 2) * sizeof(real_t));
+  buffers[0] = malloc((local_m + 2) * (local_n + 2) * sizeof(real_t));
+  buffers[1] = malloc((local_m + 2) * (local_n + 2) * sizeof(real_t));
+  buffers[2] = malloc((local_m + 2) * (local_n + 2) * sizeof(real_t));
 
-  for (int_t i = 0; i < M; i++) {
-    for (int_t j = 0; j < N; j++) {
+  for (int_t i = local_m_offset; i < local_m_offset + local_m_offset; i++) {
+    for (int_t j = local_n_offset; j < local_n_offset + local_m_offset; j++) {
       // Calculate delta (radial distance) adjusted for M x N grid
       real_t delta = sqrt(((i - M / 2.0) * (i - M / 2.0)) / (real_t)M +
                           ((j - N / 2.0) * (j - N / 2.0)) / (real_t)N);
-      U_prv(i, j) = U(i, j) = exp(-4.0 * delta * delta);
+
+      int_t i_local = i - local_m_offset;
+      int_t j_local = j - local_n_offset;
+      U_prv(i_local, j_local) = U(i_local, j_local) = exp(-4.0 * delta * delta);
     }
   }
 
@@ -222,6 +227,12 @@ int main(int argc, char **argv) {
 
   log_debug("M: %ld, N: %ld, m_processes: %d, n_processes: %d", M, N,
             m_processes, n_processes);
+
+  local_m = M / m_processes;
+  local_n = N / n_processes;
+
+  log_trace("Local M: %d, Local N: %d", local_m, local_n);
+
   MPI_Cart_create(MPI_COMM_WORLD, 2, (int[]){m_processes, n_processes},
                   (int[]){0, 0}, 0, &cart_comm);
 
@@ -237,6 +248,9 @@ int main(int argc, char **argv) {
 
   log_debug("Rank: %d, Cart rank: %d, Cart coords: (%d, %d)", world_rank,
             cart_rank, cart_coords[0], cart_coords[1]);
+
+  local_m_offset = cart_coords[0] * local_m;
+  local_n_offset = cart_coords[1] * local_n;
 
   // END: T3
 
