@@ -260,13 +260,57 @@ void boundary_condition(void) {
 // Save the present time step in a numbered file under 'data/'
 void domain_save(int_t step) {
   // BEGIN: T8
+  /* char filename[256]; */
+  /* sprintf(filename, "data/%.5ld.dat", step); */
+  /* FILE *out = fopen(filename, "wb"); */
+  /* for (int_t i = 0; i < M; i++) { */
+  /*   fwrite(&U(i, 0), sizeof(real_t), N, out); */
+  /* } */
+  /* fclose(out); */
+  // Inspiration is taken from
+  // https://stackoverflow.com/questions/33537451/writing-distributed-arrays-using-mpi-io-and-cartesian-topology
+
+  /* Create derived datatype for interior grid (output grid) */
+  MPI_Datatype grid;
+  int start[2] = {1, 1};
+  int arrsize[2] = {local_m + 2, local_n + 2};
+  int gridsize[2] = {local_m, local_n};
+
+  MPI_Type_create_subarray(2, arrsize, gridsize, start, MPI_ORDER_C, MPI_DOUBLE,
+                           &grid);
+  MPI_Type_commit(&grid);
+
+  /* Create derived type for file view */
+  MPI_Datatype view;
+  /* int nnx = nx - 2 * npad, nny = ny - 2 * npad; */
+  /* int startV[2] = {coord[0] * nnx, coord[1] * nny}; */
+  /* int arrsizeV[2] = {dim[0] * nnx, dim[1] * nny}; */
+  /* int gridsizeV[2] = {nnx, nny}; */
+
+  int startV[2] = {local_m_offset, local_n_offset};
+  int arrsizeV[2] = {M, N};
+  int gridsizeV[2] = {local_m, local_n};
+
+  MPI_Type_create_subarray(2, arrsizeV, gridsizeV, startV, MPI_ORDER_C,
+                           MPI_FLOAT, &view);
+  MPI_Type_commit(&view);
+
+  /* MPI IO */
+  MPI_File fh;
+
   char filename[256];
   sprintf(filename, "data/%.5ld.dat", step);
-  FILE *out = fopen(filename, "wb");
-  for (int_t i = 0; i < M; i++) {
-    fwrite(&U(i, 0), sizeof(real_t), N, out);
-  }
-  fclose(out);
+  log_debug("Rank %d: Writing to file: %s", world_rank, filename);
+  MPI_File_open(cart_comm, filename, MPI_MODE_CREATE | MPI_MODE_WRONLY,
+                MPI_INFO_NULL, &fh);
+
+  MPI_File_set_view(fh, 0, MPI_FLOAT, view, "native", MPI_INFO_NULL);
+  MPI_File_write_all(fh, &U(0, 0), 1, grid, MPI_STATUS_IGNORE);
+  MPI_File_close(&fh);
+
+  /* Cleanup */
+  MPI_Type_free(&view);
+  MPI_Type_free(&grid);
   // END: T8
 }
 
@@ -369,8 +413,8 @@ int main(int argc, char **argv) {
   log_debug("Rank %d: Cart rank: %d, Cart coords: (%d, %d)", world_rank,
             cart_rank, local_cart_coords[0], local_cart_coords[1]);
 
-  local_m_offset = local_cart_coords[0] * local_m;
-  local_n_offset = local_cart_coords[1] * local_n;
+  local_m_offset = local_cart_coords[0] * (local_m + 2);
+  local_n_offset = local_cart_coords[1] * (local_n + 2);
 
   // END: T3
 
