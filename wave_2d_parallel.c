@@ -50,10 +50,10 @@ int cart_rank;
 #define IS_MPI_ROOT_RANK (world_rank == MPI_ROOT_RANK)
 #define IS_MPI_LAST (world_rank == world_size - 1)
 
-#define IS_MPI_LEFTMOST (local_cart_coords[1] == 0)
-#define IS_MPI_RIGHTMOST (local_cart_coords[1] == n_processes - 1)
 #define IS_MPI_TOPMOST (local_cart_coords[0] == 0)
 #define IS_MPI_BOTTOMMOST (local_cart_coords[0] == m_processes - 1)
+#define IS_MPI_LEFTMOST (local_cart_coords[1] == 0)
+#define IS_MPI_RIGHTMOST (local_cart_coords[1] == n_processes - 1)
 
 // END: T1b
 
@@ -132,11 +132,8 @@ void border_exchange(void) {
   int right_rank;
   int bottom_rank;
 
-  // TODO: Ensure that the ranks are correct
-  MPI_Cart_shift(cart_comm, 0, -1, &_rank_source, &top_rank);
-  MPI_Cart_shift(cart_comm, 0, 1, &_rank_source, &bottom_rank);
-  MPI_Cart_shift(cart_comm, 1, 1, &_rank_source, &right_rank);
-  MPI_Cart_shift(cart_comm, 1, -1, &_rank_source, &left_rank);
+  MPI_Cart_shift(cart_comm, 0, 1, &top_rank, &bottom_rank);
+  MPI_Cart_shift(cart_comm, 1, 1, &left_rank, &right_rank);
 
   // Send left borders
   // REMEMBER cord[0] == m == rows
