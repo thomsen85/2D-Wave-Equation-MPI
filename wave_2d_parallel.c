@@ -35,7 +35,14 @@ real_t *buffers[3] = {NULL, NULL, NULL};
 #define U_nxt(i, j) buffers[2][((i) + 1) * (N + 2) + (j) + 1]
 
 int world_rank, world_size;
+// Big numbers
 int local_m, local_n, local_m_offset, local_n_offset;
+
+// Small numbers
+int local_cart_coords[2];
+int max_cart_m, max_cart_n;
+int m_processes;
+int n_processes;
 
 MPI_Comm cart_comm;
 int cart_rank;
@@ -201,8 +208,6 @@ int main(int argc, char **argv) {
   max_iteration = options->max_iteration;
   snapshot_freq = options->snapshot_frequency;
 
-  int m_processes;
-  int n_processes;
   if (M == N) {
     m_processes = n_processes = sqrt(world_size);
   } else {
@@ -243,14 +248,13 @@ int main(int argc, char **argv) {
 
   log_debug("Rank: %d, Cart rank: %d", world_rank, cart_rank);
 
-  int cart_coords[2];
-  MPI_Cart_coords(cart_comm, cart_rank, 2, cart_coords);
+  MPI_Cart_coords(cart_comm, cart_rank, 2, local_cart_coords);
 
   log_debug("Rank: %d, Cart rank: %d, Cart coords: (%d, %d)", world_rank,
-            cart_rank, cart_coords[0], cart_coords[1]);
+            cart_rank, local_cart_coords[0], local_cart_coords[1]);
 
-  local_m_offset = cart_coords[0] * local_m;
-  local_n_offset = cart_coords[1] * local_n;
+  local_m_offset = local_cart_coords[0] * local_m;
+  local_n_offset = local_cart_coords[1] * local_n;
 
   // END: T3
 
