@@ -1,9 +1,9 @@
 CC=gcc
 PARALLEL_CC=mpicc
-CFLAGS+= -std=c99 -O2 -Wall -Wextra
+CFLAGS+= -std=c99 -O2 -Wall -Wextra -DLOG_USE_COLOR
 LDLIBS+= -lm
 SEQUENTIAL_SRC_FILES=wave_2d_sequential.c argument_utils.c
-PARALLEL_SRC_FILES=wave_2d_parallel.c argument_utils.c
+PARALLEL_SRC_FILES=wave_2d_parallel.c argument_utils.c log.c/src/log.c
 IMAGES=$(shell find data -type f | sed s/\\.dat/.png/g | sed s/data/images/g )
 .PHONY: all clean dirs plot movie
 all: dirs ${TARGETS}

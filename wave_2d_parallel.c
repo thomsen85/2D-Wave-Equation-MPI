@@ -8,6 +8,9 @@
 
 #include "argument_utils.h"
 
+// TODO: Remove this include
+#include "log.c/src/log.h"
+
 // TASK: T1a
 // Include the MPI headerfile
 // BEGIN: T1a
@@ -33,7 +36,10 @@ real_t *buffers[3] = {NULL, NULL, NULL};
 
 int world_rank, world_size;
 
-#define ROOT 0
+#define MPI_ROOT 0
+#define IS_MPI_ROOT (world_rank == MPI_ROOT)
+#define IS_MPI_LAST (world_rank == world_size - 1)
+
 // END: T1b
 
 // Simulation parameters: size, step count, and how often to save the state
@@ -161,15 +167,27 @@ int main(int argc, char **argv) {
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
   // END: T1c
+  //
 
   // TASK: T3
   // Distribute the user arguments to all the processes
   // BEGIN: T3
-  OPTIONS *options = parse_args(argc, argv);
-  if (!options) {
-    fprintf(stderr, "Argument parsing failed\n");
-    exit(EXIT_FAILURE);
+  OPTIONS *options;
+  if (IS_MPI_ROOT) {
+    options = parse_args(argc, argv);
+    if (!options) {
+      fprintf(stderr, "Argument parsing failed\n");
+      exit(EXIT_FAILURE);
+    }
+  } else {
+    options = malloc(sizeof(OPTIONS));
   }
+
+  MPI_Bcast(options, sizeof(OPTIONS), MPI_BYTE, MPI_ROOT, MPI_COMM_WORLD);
+  log_debug(
+      "Rank: %d, M: %ld, N: %ld, max_iteration: %ld, snapshot_frequency: %ld",
+      world_rank, options->M, options->N, options->max_iteration,
+      options->snapshot_frequency);
 
   M = options->M;
   N = options->N;
@@ -185,15 +203,16 @@ int main(int argc, char **argv) {
   // TASK: T2
   // Time your code
   // BEGIN: T2
-  if (world_rank == ROOT)
+  if (IS_MPI_ROOT)
     gettimeofday(&t_start, NULL);
+
   simulate();
-  if (world_rank == ROOT) {
+
+  if (IS_MPI_ROOT) {
     gettimeofday(&t_end, NULL);
     printf("Total elapsed time: %lf seconds\n",
            WALLTIME(t_end) - WALLTIME(t_start));
   }
-
   // END: T2
 
   // Clean up and shut down
