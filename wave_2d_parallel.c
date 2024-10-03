@@ -102,6 +102,7 @@ void domain_initialize(void) {
 
 // Get rid of all the memory allocations
 void domain_finalize(void) {
+  log_debug("Rank %d: Domain finalize start", world_rank);
   free(buffers[0]);
   free(buffers[1]);
   free(buffers[2]);
@@ -274,30 +275,26 @@ void domain_save(int_t step) {
   int arrsize[2] = {local_m + 2, local_n + 2};
   int gridsize[2] = {local_m, local_n};
 
-  log_info("Rank %d: Creating derived datatype", world_rank);
-  log_info("Rank %d: start: (%d, %d), arrsize: (%d, %d), gridsize: (%d, %d)",
-           world_rank, start[0], start[1], arrsize[0], arrsize[1], gridsize[0],
-           gridsize[1]);
+  log_debug("Rank %d: Creating derived datatype", world_rank);
+  log_debug("Rank %d: start: (%d, %d), arrsize: (%d, %d), gridsize: (%d, %d)",
+            world_rank, start[0], start[1], arrsize[0], arrsize[1], gridsize[0],
+            gridsize[1]);
   MPI_Type_create_subarray(2, arrsize, gridsize, start, MPI_ORDER_C, MPI_DOUBLE,
                            &grid);
   MPI_Type_commit(&grid);
 
-  /* Create derived type for file view */
   MPI_Datatype view;
-  /* int nnx = nx - 2 * npad, nny = ny - 2 * npad; */
-  /* int startV[2] = {coord[0] * nnx, coord[1] * nny}; */
-  /* int arrsizeV[2] = {dim[0] * nnx, dim[1] * nny}; */
-  /* int gridsizeV[2] = {nnx, nny}; */
 
   int startV[2] = {local_m * local_cart_coords[0],
                    local_n * local_cart_coords[1]};
   int arrsizeV[2] = {M, N};
   int gridsizeV[2] = {local_m, local_n};
 
-  log_info("Rank %d: Creating derived datatype 2", world_rank);
-  log_info("Rank %d: startV: (%d, %d), arrsizeV: (%d, %d), gridsizeV: (%d, %d)",
-           world_rank, startV[0], startV[1], arrsizeV[0], arrsizeV[1],
-           gridsizeV[0], gridsizeV[1]);
+  log_debug("Rank %d: Creating derived datatype 2", world_rank);
+  log_debug(
+      "Rank %d: startV: (%d, %d), arrsizeV: (%d, %d), gridsizeV: (%d, %d)",
+      world_rank, startV[0], startV[1], arrsizeV[0], arrsizeV[1], gridsizeV[0],
+      gridsizeV[1]);
   MPI_Type_create_subarray(2, arrsizeV, gridsizeV, startV, MPI_ORDER_C,
                            MPI_DOUBLE, &view);
   MPI_Type_commit(&view);
@@ -307,7 +304,8 @@ void domain_save(int_t step) {
 
   char filename[256];
   sprintf(filename, "data/%.5ld.dat", step);
-  log_debug("Rank %d: Writing to file: %s", world_rank, filename);
+  log_info("Rank %d: Writing to file: %s", world_rank, filename);
+
   MPI_File_open(cart_comm, filename, MPI_MODE_CREATE | MPI_MODE_WRONLY,
                 MPI_INFO_NULL, &fh);
 
@@ -341,7 +339,7 @@ void simulate(void) {
 
 int main(int argc, char **argv) {
   // TODO: remove this
-  log_set_level(LOG_TRACE);
+  log_set_level(LOG_DEBUG);
   // TASK: T1c
   // Initialise MPI
   // BEGIN: T1c
@@ -375,35 +373,42 @@ int main(int argc, char **argv) {
   N = options->N;
   max_iteration = options->max_iteration;
   snapshot_freq = options->snapshot_frequency;
+  free(options);
 
-  if (M == N) {
-    m_processes = n_processes = sqrt(world_size);
-  } else {
-    if (M > N) {
-      int mult = M / N;
-      if (world_size % (mult + 1) != 0) {
-        log_error("Number of processes must be divisible by %d", mult + 1);
-        exit(EXIT_FAILURE);
-      }
-      n_processes = world_size / (mult + 1);
-      m_processes = world_size / n_processes;
-    } else {
-      int mult = N / M;
-      if (world_size % (mult + 1) != 0) {
-        log_error("Number of processes must be divisible by %d", mult + 1);
-        exit(EXIT_FAILURE);
-      }
-      m_processes = world_size / (mult + 1);
-      n_processes = world_size / m_processes;
-    }
-    log_debug("M: %ld, N: %ld, m_processes: %d, n_processes: %d", M, N,
-              m_processes, n_processes);
-  }
+  int dims[2] = {0, 0};
+  MPI_Dims_create(world_size, 2, dims);
+  m_processes = dims[0];
+  n_processes = dims[1];
+  /* if (M == N) { */
+  /*   m_processes = n_processes = sqrt(world_size); */
+  /* } else { */
+  /*   if (M > N) { */
+  /*     int mult = M / N; */
+  /*     if (world_size % (mult + 1) != 0) { */
+  /*       log_error("Number of processes must be divisible by %d", mult + 1);
+   */
+  /*       exit(EXIT_FAILURE); */
+  /*     } */
+  /*     n_processes = world_size / (mult + 1); */
+  /*     m_processes = world_size / n_processes; */
+  /*   } else { */
+  /*     int mult = N / M; */
+  /*     if (world_size % (mult + 1) != 0) { */
+  /*       log_error("Number of processes must be divisible by %d", mult + 1);
+   */
+  /*       exit(EXIT_FAILURE); */
+  /*     } */
+  /*     m_processes = world_size / (mult + 1); */
+  /*     n_processes = world_size / m_processes; */
+  /*   } */
+  /*   log_debug("M: %ld, N: %ld, m_processes: %d, n_processes: %d", M, N, */
+  /*             m_processes, n_processes); */
+  /* } */
 
   local_m = M / m_processes;
   local_n = N / n_processes;
 
-  log_trace("Rank: %d: Local M: %d, Local N: %d", world_rank, local_m, local_n);
+  log_debug("Rank: %d: Local M: %d, Local N: %d", world_rank, local_m, local_n);
 
   MPI_Cart_create(MPI_COMM_WORLD, 2, (int[]){m_processes, n_processes},
                   (int[]){0, 0}, 0, &cart_comm);
@@ -448,7 +453,7 @@ int main(int argc, char **argv) {
 
   // Clean up and shut down
   domain_finalize();
-  free(options);
+  log_debug("Rank %d: Domain finalize", world_rank);
 
   // TASK: T1d
   // Finalise MPI

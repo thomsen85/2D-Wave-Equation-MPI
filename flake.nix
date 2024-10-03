@@ -27,6 +27,7 @@
               ffmpeg
               gnuplot
               clang-tools
+              bc
             ];
           };
 
