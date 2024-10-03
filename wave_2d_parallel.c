@@ -163,30 +163,37 @@ void border_exchange(void) {
     // Recive left borders and insert into right borders
     real_t *recv_column = malloc(local_m * sizeof(real_t));
 
-    log_trace("Rank: %d: Waiting to Recv right border", world_rank);
+    log_trace("Rank: %d: Waiting to Recv left border from right neighbour",
+              world_rank);
     MPI_Recv(recv_column, local_m, MPI_DOUBLE, right_rank, 0, cart_comm,
              MPI_STATUS_IGNORE);
-    log_trace("Rank: %d: Recv left border insert into right border",
+    log_trace("Rank: %d: Recv left border inserting into right border...",
               world_rank);
 
     // Insert into right side of U
     for (int_t i = 0; i < local_m; i++) {
       U(i, local_n) = recv_column[i];
     }
+    log_trace("Rank: %d: Done inserting right border into left border",
+              world_rank);
+
     free(recv_column);
     // Send right borders
 
     real_t *send_column = malloc(local_m * sizeof(real_t));
 
+    log_trace("Rank: %d: Filling send send_column right border", world_rank);
     // Filling the column with right
     for (int_t i = 0; i < local_m; i++) {
       send_column[i] = U(i, local_n - 1);
     }
 
+    log_trace("Rank: %d: Sending Right Border to left neighbour...",
+              world_rank);
     // Send Right Column
     MPI_Ssend(send_column, local_m, MPI_DOUBLE, right_rank, 0, cart_comm);
     free(send_column);
-    log_trace("Rank: %d: Send Right Border", world_rank);
+    log_trace("Rank: %d: Done sending ", world_rank);
   }
 
   // Recive left borders
@@ -194,16 +201,22 @@ void border_exchange(void) {
   if (!IS_MPI_LEFTMOST) {
     real_t *recv_column = malloc(local_m * sizeof(real_t));
 
+    log_trace("Rank: %d: Recieving Right border from left neighbour...",
+              world_rank);
     MPI_Recv(recv_column, local_m, MPI_DOUBLE, left_rank, 0, cart_comm,
              MPI_STATUS_IGNORE);
+    log_trace("Rank: %d: Recieved Right border from left neighbour",
+              world_rank);
 
     // Insert into left side of U
+
+    log_trace("Rank: %d: Inserting Right border into left border", world_rank);
     for (int_t i = 0; i < local_m; i++) {
       U(i, -1) = recv_column[i];
     }
-    free(recv_column);
-    log_trace("Rank: %d: Recieve Right border, insert into left border",
+    log_trace("Rank: %d: Done inserting right border into left border",
               world_rank);
+    free(recv_column);
   }
 
   // Send top borders
@@ -316,7 +329,9 @@ void domain_save(int_t step) {
 void simulate(void) {
   // Go through each time step
   for (int_t iteration = 0; iteration <= max_iteration; iteration++) {
-    log_trace("Rank %d: Iteration: %ld", world_rank, iteration);
+    log_trace("Rank %d: waiting for others...", world_rank, iteration);
+    MPI_Barrier(cart_comm);
+    log_trace("Rank %d: DONE --- Iteration: %ld", world_rank, iteration);
     if ((iteration % snapshot_freq) == 0) {
       domain_save(iteration / snapshot_freq);
     }
