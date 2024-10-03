@@ -141,7 +141,6 @@ void border_exchange(void) {
   // REMEMBER cord[1] == n == cols
   // Not Leftmost
   if (!IS_MPI_LEFTMOST) {
-
     // Sending and receve could probalby be done on the same memory allocation
     real_t *send_column = malloc(local_m * sizeof(real_t));
 
@@ -151,43 +150,41 @@ void border_exchange(void) {
     }
 
     // Send Left Column
-    MPI_Send(send_column, local_m, MPI_DOUBLE, left_rank, 0, cart_comm);
+
+    log_trace("Rank: %d: Sending left border", world_rank);
+    MPI_Ssend(send_column, local_m, MPI_DOUBLE, left_rank, 0, cart_comm);
+    log_trace("Rank: %d: Sendt left border", world_rank);
 
     free(send_column);
-    log_trace("Rank: %d: Send left border", world_rank);
   }
 
   // Not Rightmost
   if (!IS_MPI_RIGHTMOST) {
-    // Recive right borders
+    // Recive left borders and insert into right borders
     real_t *recv_column = malloc(local_m * sizeof(real_t));
 
+    log_trace("Rank: %d: Waiting to Recv right border", world_rank);
     MPI_Recv(recv_column, local_m, MPI_DOUBLE, right_rank, 0, cart_comm,
              MPI_STATUS_IGNORE);
     log_trace("Rank: %d: Recv left border insert into right border",
               world_rank);
 
     // Insert into right side of U
-    log_trace("Rank: %d: Insert into right border", world_rank);
     for (int_t i = 0; i < local_m; i++) {
       U(i, local_n) = recv_column[i];
     }
-
-    log_trace("Rank: %d: Inserted into right border", world_rank);
     free(recv_column);
     // Send right borders
 
     real_t *send_column = malloc(local_m * sizeof(real_t));
 
-    log_trace("Rank: %d: Send right border", world_rank);
     // Filling the column with right
     for (int_t i = 0; i < local_m; i++) {
       send_column[i] = U(i, local_n - 1);
     }
-    log_trace("Rank: %d: Filled right border", world_rank);
 
     // Send Right Column
-    MPI_Send(send_column, local_m, MPI_DOUBLE, right_rank, 0, cart_comm);
+    MPI_Ssend(send_column, local_m, MPI_DOUBLE, right_rank, 0, cart_comm);
     free(send_column);
     log_trace("Rank: %d: Send Right Border", world_rank);
   }
@@ -336,7 +333,7 @@ void simulate(void) {
 
 int main(int argc, char **argv) {
   // TODO: remove this
-  log_set_level(LOG_DEBUG);
+  log_set_level(LOG_TRACE);
   // TASK: T1c
   // Initialise MPI
   // BEGIN: T1c
