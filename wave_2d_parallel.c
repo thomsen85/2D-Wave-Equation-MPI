@@ -235,19 +235,19 @@ void border_exchange(void) {
 // Neumann (reflective) boundary condition
 void boundary_condition(void) {
   // BEGIN: T7
-  for (int_t i = 0; i < M; i++) {
+  for (int_t i = 0; i < local_m; i++) {
     if (IS_MPI_LEFTMOST)
       U(i, -1) = U(i, 1);
 
     if (IS_MPI_RIGHTMOST)
-      U(i, N) = U(i, N - 2);
+      U(i, local_n) = U(i, local_n - 2);
   }
-  for (int_t j = 0; j < N; j++) {
+  for (int_t j = 0; j < local_n; j++) {
     if (IS_MPI_TOPMOST)
       U(-1, j) = U(1, j);
 
     if (IS_MPI_BOTTOMMOST)
-      U(M, j) = U(M - 2, j);
+      U(local_m, j) = U(local_m - 2, j);
   }
   // END: T7
 }
