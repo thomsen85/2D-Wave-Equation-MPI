@@ -29,9 +29,9 @@ real_t *buffers[3] = {NULL, NULL, NULL};
 // TASK: T1b
 // Declare variables each MPI process will need
 // BEGIN: T1b
-#define U_prv(i, j) buffers[0][((i) + 1) * (N + 2) + (j) + 1]
-#define U(i, j) buffers[1][((i) + 1) * (N + 2) + (j) + 1]
-#define U_nxt(i, j) buffers[2][((i) + 1) * (N + 2) + (j) + 1]
+#define U_prv(i, j) buffers[0][((i) + 1) * (local_columns + 2) + (j) + 1]
+#define U(i, j) buffers[1][((i) + 1) * (local_columns + 2) + (j) + 1]
+#define U_nxt(i, j) buffers[2][((i) + 1) * (local_columns + 2) + (j) + 1]
 
 int world_rank, world_size;
 // Big numbers
