@@ -46,9 +46,14 @@ int n_processes;
 MPI_Comm cart_comm;
 int cart_rank;
 
+// Types
 MPI_Datatype column_type;
+MPI_Datatype file_view;
+MPI_Datatype file_grid;
 
 #define MPI_ROOT_RANK 0
+
+// Checks
 #define IS_MPI_ROOT_RANK (world_rank == MPI_ROOT_RANK)
 #define IS_MPI_LAST (world_rank == world_size - 1)
 
@@ -143,22 +148,12 @@ void border_exchange(void) {
   // REMEMBER cord[1] == n == cols
   // Not Leftmost
   if (!IS_MPI_LEFTMOST) {
-    // Sending and receve could probalby be done on the same memory allocation
-    /* real_t *send_column = malloc(local_m * sizeof(real_t)); */
-
-    // Filling the column with left
-    /* for (int_t i = 0; i < local_m; i++) { */
-    /*   send_column[i] = U(i, 0); */
-    /* } */
-
     // Send Left Column
 
     log_trace("Rank: %d (%d, %d): Sending left border to %d...", world_rank,
               local_cart_coords[0], local_cart_coords[1], left_rank);
     MPI_Send(&U(0, 0), 1, column_type, left_rank, 0, cart_comm);
     log_trace("Rank: %d: Sendt left border", world_rank);
-
-    /* free(send_column); */
   }
 
   // Not Rightmost
@@ -190,17 +185,6 @@ void border_exchange(void) {
              MPI_STATUS_IGNORE);
     log_trace("Rank: %d: Recieved Right border from left neighbour",
               world_rank);
-
-    // Insert into left side of U
-
-    /* log_trace("Rank: %d: Inserting Right border into left border",
-     * world_rank); */
-    /* for (int_t i = 0; i < local_m; i++) { */
-    /*   U(i, -1) = recv_column[i]; */
-    /* } */
-    /* log_trace("Rank: %d: Done inserting right border into left border", */
-    /*           world_rank); */
-    /* free(recv_column); */
   }
 
   // Send top borders
@@ -228,7 +212,32 @@ void border_exchange(void) {
              MPI_STATUS_IGNORE);
     log_trace("Rank: %d: Recv top border", world_rank);
   }
+  int source, above, under, left, right;
 
+  // Get the above neighbour
+  MPI_Cart_shift(comm_cart, 0, -1, &source, &above);
+
+  // Get the below neighbour
+  MPI_Cart_shift(comm_cart, 0, 1, &source, &under);
+
+  // Get the left neighbour
+  MPI_Cart_shift(comm_cart, 1, -1, &source, &left);
+
+  // Get the right neighbour
+  MPI_Cart_shift(comm_cart, 1, 1, &source, &right);
+
+  // Exchange columns (left and right)
+  MPI_Sendrecv(&U(0, 0), 1, column_type, left, 0, &U(0, local_N), 1,
+               column_type, right, 0, comm_cart, MPI_STATUS_IGNORE);
+
+  MPI_Sendrecv(&U(0, local_N - 1), 1, column_type, right, 0, &U(0, -1), 1,
+               column_type, left, 0, comm_cart, MPI_STATUS_IGNORE);
+  // Exchange rows (above and under)
+  MPI_Sendrecv(&U(0, 0), local_N, MPI_DOUBLE, under, 0, &U(local_M, 0), local_M,
+               MPI_DOUBLE, above, 0, comm_cart, MPI_STATUS_IGNORE);
+
+  MPI_Sendrecv(&U(local_M - 1, 0), local_N, MPI_DOUBLE, above, 0, &U(-1, 0),
+               local_N, MPI_DOUBLE, under, 0, comm_cart, MPI_STATUS_IGNORE);
   // Send and receive data from the top and bottom
   // END: T6
 }
@@ -256,44 +265,37 @@ void boundary_condition(void) {
   // END: T7
 }
 
+void setup_types() {
+  // Column type
+  MPI_Type_vector(local_m, 1, local_n + 2, MPI_DOUBLE, &column_type);
+  MPI_Type_commit(&column_type);
+
+  // File Grid Type
+  int full_array_size[2] = {local_m + 2, local_n + 2};
+  int inner_array_size[2] = {local_m, local_n};
+  int offset[2] = {0, 0};
+
+  MPI_Type_create_subarray(2, full_array_size, inner_array_size, offset,
+                           MPI_ORDER_C, MPI_DOUBLE, &file_grid);
+  MPI_Type_commit(&file_grid);
+
+  // File View Type
+  int file_size[2] = {M, N};
+  int file_grid_size[2] = {local_m, local_n};
+  int view_offset[2] = {local_m * local_cart_coords[0],
+                        local_n * local_cart_coords[1]};
+
+  MPI_Type_create_subarray(2, file_size, file_grid_size, view_offset,
+                           MPI_ORDER_C, MPI_DOUBLE, &file_view);
+  MPI_Type_commit(&file_view);
+}
+
 // TASK: T8
 // Save the present time step in a numbered file under 'data/'
 void domain_save(int_t step) {
   // BEGIN: T8
   // Inspiration is taken from
   // https://stackoverflow.com/questions/33537451/writing-distributed-arrays-using-mpi-io-and-cartesian-topology
-
-  /* Create derived datatype for interior grid (output grid) */
-  MPI_Datatype grid;
-  int start[2] = {1, 1};
-  int arrsize[2] = {local_m + 2, local_n + 2};
-  int gridsize[2] = {local_m, local_n};
-
-  log_trace("Rank %d: start: (%d, %d), arrsize: (%d, %d), gridsize: (%d, %d)",
-            world_rank, start[0], start[1], arrsize[0], arrsize[1], gridsize[0],
-            gridsize[1]);
-  MPI_Type_create_subarray(2, arrsize, gridsize, start, MPI_ORDER_C, MPI_DOUBLE,
-                           &grid);
-  MPI_Type_commit(&grid);
-
-  MPI_Datatype view;
-
-  /* int startV[2] = {local_m * local_cart_coords[0], */
-  /*                  local_n * local_cart_coords[1]}; */
-  /* int arrsizeV[2] = {M, N}; */
-  /* int gridsizeV[2] = {local_m, local_n}; */
-  int arrsizeV[2] = {M, N};
-  int gridsizeV[2] = {local_m, local_n};
-  int view_offset[2] = {local_m * local_cart_coords[0],
-                        local_n * local_cart_coords[1]};
-
-  log_trace(
-      "Rank %d: startV: (%d, %d), arrsizeV: (%d, %d), gridsizeV: (%d, %d)",
-      world_rank, view_offset[0], view_offset[1], arrsizeV[0], arrsizeV[1],
-      gridsizeV[0], gridsizeV[1]);
-  MPI_Type_create_subarray(2, arrsizeV, gridsizeV, view_offset, MPI_ORDER_C,
-                           MPI_DOUBLE, &view);
-  MPI_Type_commit(&view);
 
   /* MPI IO */
   MPI_File fh;
@@ -305,13 +307,9 @@ void domain_save(int_t step) {
   MPI_File_open(cart_comm, filename, MPI_MODE_CREATE | MPI_MODE_WRONLY,
                 MPI_INFO_NULL, &fh);
 
-  MPI_File_set_view(fh, 0, MPI_DOUBLE, view, "native", MPI_INFO_NULL);
-  MPI_File_write_all(fh, &U(0, 0), 1, grid, MPI_STATUS_IGNORE);
+  MPI_File_set_view(fh, 0, MPI_DOUBLE, file_view, "native", MPI_INFO_NULL);
+  MPI_File_write_all(fh, &buffers[1][0], 1, file_grid, MPI_STATUS_IGNORE);
   MPI_File_close(&fh);
-
-  /* Cleanup */
-  MPI_Type_free(&view);
-  MPI_Type_free(&grid);
   // END: T8
 }
 
@@ -388,9 +386,8 @@ int main(int argc, char **argv) {
   local_m = M / m_processes;
   local_n = N / n_processes;
 
-  MPI_Type_vector(1, local_m, local_n + 2, MPI_DOUBLE, &column_type);
-  MPI_Type_commit(&column_type);
-
+  log_debug("Rank: %d: M: %ld, N: %ld, m_processes: %d, n_processes: %d",
+            world_rank, M, N, m_processes, n_processes);
   log_debug("Rank: %d: Local_m: %d, Local_n: %d", world_rank, local_m, local_n);
 
   MPI_Cart_create(MPI_COMM_WORLD, 2, (int[]){m_processes, n_processes},
@@ -418,6 +415,7 @@ int main(int argc, char **argv) {
   domain_initialize();
 
   struct timeval t_start, t_end;
+  setup_types();
 
   // TASK: T2
   // Time your code
@@ -441,6 +439,12 @@ int main(int argc, char **argv) {
   // TASK: T1d
   // Finalise MPI
   // BEGIN: T1d
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  MPI_Type_free(&file_view);
+  MPI_Type_free(&file_grid);
+  MPI_Type_free(&column_type);
+
   MPI_Comm_free(&cart_comm);
   MPI_Finalize();
   // END: T1d
