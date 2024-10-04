@@ -8,8 +8,6 @@
 
 #include "argument_utils.h"
 
-// TODO: Remove this include
-#include "log.c/src/log.h"
 // TASK: T1a
 // Include the MPI headerfile
 // BEGIN: T1a
@@ -110,7 +108,6 @@ void domain_initialize(void) {
 
 // Get rid of all the memory allocations
 void domain_finalize(void) {
-  log_debug("Rank %d: Domain finalize start", world_rank);
   free(buffers[0]);
   free(buffers[1]);
   free(buffers[2]);
@@ -150,30 +147,18 @@ void border_exchange(void) {
   // Not Leftmost
   if (!IS_MPI_LEFTMOST) {
     // Send Left Column
-
-    log_trace("Rank: %d (%d, %d): Sending left border to %d...", world_rank,
-              local_coords[0], local_coords[1], left_rank);
     MPI_Send(&U(0, 0), 1, column_type, left_rank, 0, cart_comm);
-    log_trace("Rank: %d: Sendt left border", world_rank);
   }
 
   // Not Rightmost
   if (!IS_MPI_RIGHTMOST) {
     // Recive left borders and insert into right borders
-    log_trace("Rank: %d: Waiting to Recv left border from right neighbour",
-              world_rank);
     MPI_Recv(&U(0, local_columns), 1, column_type, right_rank, 0, cart_comm,
              MPI_STATUS_IGNORE);
-    log_trace("Rank: %d: Recv left border inserting into right border...",
-              world_rank);
 
-    log_trace("Rank: %d: Sending Right Border to right neighbour %d...",
-              world_rank, right_rank);
     // Send Right Column
     MPI_Send(&U(0, local_columns - 1), 1, column_type, right_rank, 0,
              cart_comm);
-    /* free(send_column); */
-    log_trace("Rank: %d: Done sending", world_rank);
   }
 
   // Recive left borders
@@ -181,12 +166,8 @@ void border_exchange(void) {
   if (!IS_MPI_LEFTMOST) {
     /* real_t *recv_column = malloc(local_m * sizeof(real_t)); */
 
-    log_trace("Rank: %d: Recieving Right border from left neighbour...",
-              world_rank);
     MPI_Recv(&U(0, -1), 1, column_type, left_rank, 0, cart_comm,
              MPI_STATUS_IGNORE);
-    log_trace("Rank: %d: Recieved Right border from left neighbour",
-              world_rank);
   }
 
   // Send top borders
@@ -194,7 +175,6 @@ void border_exchange(void) {
   if (!IS_MPI_TOPMOST) {
     // Send Top Row
     MPI_Send(&U(0, 0), local_columns, MPI_DOUBLE, top_rank, 0, cart_comm);
-    log_trace("Rank: %d: Sendt top border", world_rank);
   }
 
   // Not Bottommost
@@ -212,7 +192,6 @@ void border_exchange(void) {
     // Recive bottom borders
     MPI_Recv(&U(-1, 0), local_columns, MPI_DOUBLE, top_rank, 0, cart_comm,
              MPI_STATUS_IGNORE);
-    log_trace("Rank: %d: Recv top border", world_rank);
   }
   // Send and receive data from the top and bottom
   // END: T6
@@ -277,7 +256,6 @@ void domain_save(int_t step) {
 
   char filename[256];
   sprintf(filename, "data/%.5ld.dat", step);
-  log_info("Rank %d: Writing to file: %s", world_rank, filename);
 
   MPI_File fh;
   MPI_File_open(cart_comm, filename, MPI_MODE_CREATE | MPI_MODE_WRONLY,
@@ -293,7 +271,6 @@ void domain_save(int_t step) {
 void simulate(void) {
   // Go through each time step
   for (int_t iteration = 0; iteration <= max_iteration; iteration++) {
-    log_trace("Rank %d: DONE --- Iteration: %ld", world_rank, iteration);
     if ((iteration % snapshot_freq) == 0) {
       domain_save(iteration / snapshot_freq);
     }
@@ -309,8 +286,6 @@ void simulate(void) {
 }
 
 int main(int argc, char **argv) {
-  // TODO: remove this
-  log_set_level(LOG_ERROR);
   // TASK: T1c
   // Initialise MPI
   // BEGIN: T1c
@@ -318,16 +293,6 @@ int main(int argc, char **argv) {
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
   // END: T1c
-
-  // TODO: Remove this
-  char log_file[256];
-  sprintf(log_file, "log_rank_%d.log", world_rank);
-  FILE *log_fp = fopen(log_file, "w");
-  if (!log_fp) {
-    fprintf(stderr, "Failed to open log file\n");
-    exit(EXIT_FAILURE);
-  }
-  log_add_fp(log_fp, LOG_TRACE);
 
   // TASK: T3
   // Distribute the user arguments to all the processes
@@ -344,10 +309,6 @@ int main(int argc, char **argv) {
   }
 
   MPI_Bcast(options, sizeof(OPTIONS), MPI_BYTE, MPI_ROOT_RANK, MPI_COMM_WORLD);
-  log_debug(
-      "Rank %d: M: %ld, N: %ld, max_iteration: %ld, snapshot_frequency: %ld",
-      world_rank, options->M, options->N, options->max_iteration,
-      options->snapshot_frequency);
 
   M = options->M;
   N = options->N;
@@ -362,11 +323,6 @@ int main(int argc, char **argv) {
   local_rows = M / m_processes;
   local_columns = N / n_processes;
 
-  log_debug("Rank: %d: M: %ld, N: %ld, m_processes: %d, n_processes: %d",
-            world_rank, M, N, m_processes, n_processes);
-  log_debug("Rank: %d: Local_m: %d, Local_n: %d", world_rank, local_rows,
-            local_columns);
-
   MPI_Cart_create(MPI_COMM_WORLD, 2, (int[]){m_processes, n_processes},
                   (int[]){0, 0}, 0, &cart_comm);
 
@@ -376,18 +332,12 @@ int main(int argc, char **argv) {
 
   MPI_Cart_coords(cart_comm, cart_rank, 2, local_coords);
 
-  log_debug("Rank %d: Cart rank: %d, Cart coords: (%d, %d), Cart size",
-            world_rank, cart_rank, local_coords[0], local_coords[1], cart_size);
-
   local_row_offset = local_coords[0] * local_rows;
   local_column_offset = local_coords[1] * local_columns;
-  log_debug("Rank %d: Local_m_offset: %d, Local_n_offset: %d", world_rank,
-            local_row_offset, local_column_offset);
 
   // END: T3
 
   // Set up the initial state of the domain
-  log_trace("Rank %d: Domain initializing", world_rank);
   domain_initialize();
   setup_types();
 
@@ -410,7 +360,6 @@ int main(int argc, char **argv) {
 
   // Clean up and shut down
   domain_finalize();
-  log_debug("Rank %d: Domain finalize", world_rank);
 
   // TASK: T1d
   // Finalise MPI
@@ -426,8 +375,6 @@ int main(int argc, char **argv) {
   // END: T1d
 
   free(options);
-  // TODO: Remove this
-  fclose(log_fp);
 
   exit(EXIT_SUCCESS);
 }
