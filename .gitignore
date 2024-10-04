@@ -5,5 +5,4 @@ sequential
 parallel
 *.pdf
 *.log
-
-
+data_sequential/

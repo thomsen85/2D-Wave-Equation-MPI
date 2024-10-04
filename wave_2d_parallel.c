@@ -46,6 +46,8 @@ int n_processes;
 MPI_Comm cart_comm;
 int cart_rank;
 
+MPI_Datatype column_type;
+
 #define MPI_ROOT_RANK 0
 #define IS_MPI_ROOT_RANK (world_rank == MPI_ROOT_RANK)
 #define IS_MPI_LAST (world_rank == world_size - 1)
@@ -142,81 +144,63 @@ void border_exchange(void) {
   // Not Leftmost
   if (!IS_MPI_LEFTMOST) {
     // Sending and receve could probalby be done on the same memory allocation
-    real_t *send_column = malloc(local_m * sizeof(real_t));
+    /* real_t *send_column = malloc(local_m * sizeof(real_t)); */
 
     // Filling the column with left
-    for (int_t i = 0; i < local_m; i++) {
-      send_column[i] = U(i, 0);
-    }
+    /* for (int_t i = 0; i < local_m; i++) { */
+    /*   send_column[i] = U(i, 0); */
+    /* } */
 
     // Send Left Column
 
-    log_trace("Rank: %d: Sending left border", world_rank);
-    MPI_Ssend(send_column, local_m, MPI_DOUBLE, left_rank, 0, cart_comm);
+    log_trace("Rank: %d (%d, %d): Sending left border to %d...", world_rank,
+              local_cart_coords[0], local_cart_coords[1], left_rank);
+    MPI_Send(&U(0, 0), 1, column_type, left_rank, 0, cart_comm);
     log_trace("Rank: %d: Sendt left border", world_rank);
 
-    free(send_column);
+    /* free(send_column); */
   }
 
   // Not Rightmost
   if (!IS_MPI_RIGHTMOST) {
     // Recive left borders and insert into right borders
-    real_t *recv_column = malloc(local_m * sizeof(real_t));
-
     log_trace("Rank: %d: Waiting to Recv left border from right neighbour",
               world_rank);
-    MPI_Recv(recv_column, local_m, MPI_DOUBLE, right_rank, 0, cart_comm,
+    MPI_Recv(&U(0, local_n), 1, column_type, right_rank, 0, cart_comm,
              MPI_STATUS_IGNORE);
     log_trace("Rank: %d: Recv left border inserting into right border...",
               world_rank);
 
-    // Insert into right side of U
-    for (int_t i = 0; i < local_m; i++) {
-      U(i, local_n) = recv_column[i];
-    }
-    log_trace("Rank: %d: Done inserting right border into left border",
-              world_rank);
-
-    free(recv_column);
-    // Send right borders
-
-    real_t *send_column = malloc(local_m * sizeof(real_t));
-
-    log_trace("Rank: %d: Filling send send_column right border", world_rank);
-    // Filling the column with right
-    for (int_t i = 0; i < local_m; i++) {
-      send_column[i] = U(i, local_n - 1);
-    }
-
-    log_trace("Rank: %d: Sending Right Border to left neighbour...",
-              world_rank);
+    log_trace("Rank: %d: Sending Right Border to right neighbour %d...",
+              world_rank, right_rank);
     // Send Right Column
-    MPI_Ssend(send_column, local_m, MPI_DOUBLE, right_rank, 0, cart_comm);
-    free(send_column);
-    log_trace("Rank: %d: Done sending ", world_rank);
+    MPI_Send(&U(0, local_n - 1), 1, column_type, right_rank, 0, cart_comm);
+    /* free(send_column); */
+    log_trace("Rank: %d: Done sending", world_rank);
   }
 
   // Recive left borders
   // Not Leftmost
   if (!IS_MPI_LEFTMOST) {
-    real_t *recv_column = malloc(local_m * sizeof(real_t));
+    /* real_t *recv_column = malloc(local_m * sizeof(real_t)); */
 
     log_trace("Rank: %d: Recieving Right border from left neighbour...",
               world_rank);
-    MPI_Recv(recv_column, local_m, MPI_DOUBLE, left_rank, 0, cart_comm,
+    MPI_Recv(&U(0, -1), 1, column_type, left_rank, 0, cart_comm,
              MPI_STATUS_IGNORE);
     log_trace("Rank: %d: Recieved Right border from left neighbour",
               world_rank);
 
     // Insert into left side of U
 
-    log_trace("Rank: %d: Inserting Right border into left border", world_rank);
-    for (int_t i = 0; i < local_m; i++) {
-      U(i, -1) = recv_column[i];
-    }
-    log_trace("Rank: %d: Done inserting right border into left border",
-              world_rank);
-    free(recv_column);
+    /* log_trace("Rank: %d: Inserting Right border into left border",
+     * world_rank); */
+    /* for (int_t i = 0; i < local_m; i++) { */
+    /*   U(i, -1) = recv_column[i]; */
+    /* } */
+    /* log_trace("Rank: %d: Done inserting right border into left border", */
+    /*           world_rank); */
+    /* free(recv_column); */
   }
 
   // Send top borders
@@ -253,6 +237,7 @@ void border_exchange(void) {
 // Neumann (reflective) boundary condition
 void boundary_condition(void) {
   // BEGIN: T7
+  // Columns
   for (int_t i = 0; i < local_m; i++) {
     if (IS_MPI_LEFTMOST)
       U(i, -1) = U(i, 1);
@@ -260,6 +245,7 @@ void boundary_condition(void) {
     if (IS_MPI_RIGHTMOST)
       U(i, local_n) = U(i, local_n - 2);
   }
+  // Rows
   for (int_t j = 0; j < local_n; j++) {
     if (IS_MPI_TOPMOST)
       U(-1, j) = U(1, j);
@@ -292,16 +278,20 @@ void domain_save(int_t step) {
 
   MPI_Datatype view;
 
-  int startV[2] = {local_m * local_cart_coords[0],
-                   local_n * local_cart_coords[1]};
+  /* int startV[2] = {local_m * local_cart_coords[0], */
+  /*                  local_n * local_cart_coords[1]}; */
+  /* int arrsizeV[2] = {M, N}; */
+  /* int gridsizeV[2] = {local_m, local_n}; */
   int arrsizeV[2] = {M, N};
   int gridsizeV[2] = {local_m, local_n};
+  int view_offset[2] = {local_m * local_cart_coords[0],
+                        local_n * local_cart_coords[1]};
 
   log_trace(
       "Rank %d: startV: (%d, %d), arrsizeV: (%d, %d), gridsizeV: (%d, %d)",
-      world_rank, startV[0], startV[1], arrsizeV[0], arrsizeV[1], gridsizeV[0],
-      gridsizeV[1]);
-  MPI_Type_create_subarray(2, arrsizeV, gridsizeV, startV, MPI_ORDER_C,
+      world_rank, view_offset[0], view_offset[1], arrsizeV[0], arrsizeV[1],
+      gridsizeV[0], gridsizeV[1]);
+  MPI_Type_create_subarray(2, arrsizeV, gridsizeV, view_offset, MPI_ORDER_C,
                            MPI_DOUBLE, &view);
   MPI_Type_commit(&view);
 
@@ -329,8 +319,6 @@ void domain_save(int_t step) {
 void simulate(void) {
   // Go through each time step
   for (int_t iteration = 0; iteration <= max_iteration; iteration++) {
-    log_trace("Rank %d: waiting for others...", world_rank, iteration);
-    MPI_Barrier(cart_comm);
     log_trace("Rank %d: DONE --- Iteration: %ld", world_rank, iteration);
     if ((iteration % snapshot_freq) == 0) {
       domain_save(iteration / snapshot_freq);
@@ -391,15 +379,17 @@ int main(int argc, char **argv) {
   N = options->N;
   max_iteration = options->max_iteration;
   snapshot_freq = options->snapshot_frequency;
-  free(options);
 
   int dims[2] = {0, 0};
   MPI_Dims_create(world_size, 2, dims);
-  m_processes = dims[1];
-  n_processes = dims[0];
+  m_processes = dims[0];
+  n_processes = dims[1];
 
   local_m = M / m_processes;
   local_n = N / n_processes;
+
+  MPI_Type_vector(1, local_m, local_n + 2, MPI_DOUBLE, &column_type);
+  MPI_Type_commit(&column_type);
 
   log_debug("Rank: %d: Local_m: %d, Local_n: %d", world_rank, local_m, local_n);
 
@@ -451,9 +441,11 @@ int main(int argc, char **argv) {
   // TASK: T1d
   // Finalise MPI
   // BEGIN: T1d
+  MPI_Comm_free(&cart_comm);
   MPI_Finalize();
   // END: T1d
 
+  free(options);
   // TODO: Remove this
   fclose(log_fp);
 
