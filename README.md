@@ -1,3 +1,4 @@
+# 2D Wave Equation implemented with MPI
 * make       : builds the executable 'wave_1d'
 * ./wave\_2d : fills the 'data/' directory with stored time steps
 * make plot  : converts saved time steps to png files under 'images/', using gnuplot. Runs faster if launched with e.g. 4 threads (make -j4 plot).
